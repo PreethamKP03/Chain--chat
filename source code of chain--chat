@@ -1,0 +1,120 @@
+TypeScript
+
+
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { ethers } from 'ethers';
+
+// CONSTANTS for Amoy Network
+const AMOY_CHAIN_ID = 80002n; // Note: BigInt literal
+const AMOY_HEX_CHAIN_ID = "0x13882";
+const AMOY_RPC_URL = "https://rpc-amoy.polygon.technology";
+
+interface WalletContextType {
+  provider: ethers.BrowserProvider | null;
+  signer: ethers.JsonRpcSigner | null;
+  account: string | null;
+  connectWallet: () => Promise<void>;
+  chainId: bigint | null;
+}
+
+const WalletContext = createContext<WalletContextType | undefined>(undefined);
+
+export const WalletProvider = ({ children }: { children: ReactNode }) => {
+  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
+  const = useState<ethers.JsonRpcSigner | null>(null);
+  const [account, setAccount] = useState<string | null>(null);
+  const [chainId, setChainId] = useState<bigint | null>(null);
+
+  // Initialize Provider on Mount
+  useEffect(() => {
+    if (window.ethereum) {
+      // In Ethers v6, Web3Provider is replaced by BrowserProvider
+      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      setProvider(browserProvider);
+
+      // Listen for account changes
+      window.ethereum.on('accountsChanged', (accounts: string) => {
+        if (accounts.length > 0) {
+          setAccount(accounts);
+          updateSigner(browserProvider);
+        } else {
+          setAccount(null);
+          setSigner(null);
+        }
+      });
+
+      // Listen for chain changes - Reload is recommended
+      window.ethereum.on('chainChanged', () => {
+        window.location.reload();
+      });
+    }
+  },);
+
+  const updateSigner = async (prov: ethers.BrowserProvider) => {
+    const newSigner = await prov.getSigner();
+    setSigner(newSigner);
+    const network = await prov.getNetwork();
+    setChainId(network.chainId);
+    
+    // Strict Network Enforcement
+    if (network.chainId!== AMOY_CHAIN_ID) {
+      requestNetworkSwitch();
+    }
+  };
+
+  const requestNetworkSwitch = async () => {
+    if (!window.ethereum) return;
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params:,
+      });
+    } catch (error: any) {
+      // Error Code 4902 indicates the chain is not added to the wallet
+      if (error.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params:,
+                blockExplorerUrls: ['https://amoy.polygonscan.com/'],
+              },
+            ],
+          });
+        } catch (addError) {
+          console.error("Failed to add Amoy network:", addError);
+        }
+      }
+    }
+  };
+
+  const connectWallet = async () => {
+    if (provider) {
+      try {
+        await provider.send("eth_requestAccounts",);
+        const accounts = await provider.listAccounts();
+        if (accounts.length > 0) {
+          setAccount(accounts.address);
+          await updateSigner(provider);
+        }
+      } catch (error) {
+        console.error("Connection failed:", error);
+      }
+    } else {
+      alert("Please install MetaMask!");
+    }
+  };
+
+  return (
+    <WalletContext.Provider value={{ provider, signer, account, connectWallet, chainId }}>
+      {children}
+    </WalletContext.Provider>
+  );
+};
+
+export const useWallet = () => {
+  const context = useContext(WalletContext);
+  if (context === undefined) {
+    throw new Error('useWallet must be used within a WalletProvider');
+  }
+  return context;
+};
